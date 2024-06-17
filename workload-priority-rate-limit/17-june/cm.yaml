@@ -1,0 +1,34 @@
+apiVersion: v1
+data:
+  sidecar-httpbin.httpbin.svc.cluster.local.yaml: |
+    descriptors:
+    # - key: remote_address
+    #   rate_limit:
+    #     requests_per_unit: 2
+    #     unit: minute
+    - descriptors:
+      - key: httpbin.httpbin.svc.cluster.local-key-rule-1-dimension-1
+        rate_limit:
+          requests_per_unit: 2
+          unit: minute
+      key: header_match
+      value: httpbin.httpbin.svc.cluster.local-value-rule-1-dimension-0
+    domain: sidecar-httpbin-wl
+  sidecar-httpbin.yaml: |
+    descriptors:
+    - key: remote_address
+      rate_limit:
+        requests_per_unit: 3
+        unit: minute
+    - descriptors:
+      - key: -key-rule-1-dimension-1
+        rate_limit:
+          requests_per_unit: 1
+          unit: minute
+      key: header_match
+      value: -value-rule-1-dimension-0
+    domain: sidecar-httpbin
+kind: ConfigMap
+metadata:
+  name: xcp-ratelimit-configmap
+  namespace: istio-system

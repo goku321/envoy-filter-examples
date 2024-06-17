@@ -1,0 +1,85 @@
+apiVersion: networking.istio.io/v1alpha3
+kind: EnvoyFilter
+metadata:
+  name: ratelimiting-sidecar-httpbin
+  namespace: httpbin
+spec:
+  priority: 10
+  workloadSelector:
+    labels:
+      app: httpbin
+  configPatches:
+  - applyTo: HTTP_FILTER
+    match:
+      context: SIDECAR_INBOUND
+      listener:
+        filterChain:
+          filter:
+            name: envoy.filters.network.http_connection_manager
+      proxy:
+        proxyVersion: ^1\.(17|19|20|21)(\.\d+)?(-.*)?$
+    patch:
+      operation: INSERT_BEFORE
+      value:
+        '@type': type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpFilter
+        name: envoy.filters.http.ratelimit
+        typed_config:
+          '@type': type.googleapis.com/envoy.extensions.filters.http.ratelimit.v3.RateLimit
+          domain: sidecar-httpbin-wl
+          rate_limit_service:
+            grpc_service:
+              envoy_grpc:
+                cluster_name: rate-limit-cluster-xcp-ratelimit-server.istio-system.svc.cluster.local:8081
+            transport_api_version: V3
+  - applyTo: VIRTUAL_HOST
+    match:
+      context: SIDECAR_INBOUND
+      proxy:
+        proxyVersion: ^1\.(17|19|20|21)(\.\d+)?(-.*)?$
+      routeConfiguration:
+        vhost:
+          route: {}
+    patch:
+      operation: MERGE
+      value:
+        '@type': type.googleapis.com/envoy.config.route.v3.VirtualHost
+        rate_limits:
+        # - actions:
+        #   - remote_address: {}
+        - actions:
+          - header_value_match:
+              descriptor_value: httpbin.httpbin.svc.cluster.local-value-rule-1-dimension-0
+              expect_match: true
+              headers:
+              - exact_match: GET
+                name: :method
+          - request_headers:
+              descriptor_key: httpbin.httpbin.svc.cluster.local-key-rule-1-dimension-1
+              header_name: foo
+  - applyTo: CLUSTER
+    match:
+      cluster:
+        service: xcp-ratelimit-server.istio-system.svc.cluster.local
+      proxy:
+        proxyVersion: ^1\.(17|19|20|21)(\.\d+)?(-.*)?$
+    patch:
+      operation: ADD
+      value:
+        '@type': type.googleapis.com/envoy.config.cluster.v3.Cluster
+        connect_timeout: 10s
+        dns_lookup_family: V4_ONLY
+        dns_refresh_rate: 30s
+        http2_protocol_options: {}
+        lb_policy: RANDOM
+        load_assignment:
+          cluster_name: rate-limit-cluster-xcp-ratelimit-server.istio-system.svc.cluster.local:8081
+          endpoints:
+          - lb_endpoints:
+            - endpoint:
+                address:
+                  socket_address:
+                    address: xcp-ratelimit-server.istio-system.svc.cluster.local
+                    port_value: 8081
+        name: rate-limit-cluster-xcp-ratelimit-server.istio-system.svc.cluster.local:8081
+        respect_dns_ttl: true
+        type: STRICT_DNS
